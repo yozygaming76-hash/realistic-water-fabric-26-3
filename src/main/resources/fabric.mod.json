@@ -1,14 +1,20 @@
+
 {
   "schemaVersion": 1,
   "id": "realistic_water",
   "version": "${version}",
   "name": "Realistic Water",
-  "description": "Adds a Realistic Water Bucket with a lightweight voxel-style water spread prototype.",
+  "description": "Adds a custom water bucket and simulated water.",
   "authors": ["You"],
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.example.realisticwater.RealisticWaterMod"]
+    "main": [
+      "dev.example.realisticwater.RealisticWaterMod"
+    ],
+    "client": [
+      "dev.example.realisticwater.RealisticWaterClient"
+    ]
   },
   "depends": {
     "fabricloader": ">=0.19.5",
