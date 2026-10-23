@@ -9,6 +9,9 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
+    "mixins": [
+  "realistic_water.mixins.json"
+],
     "main": [
       "dev.example.realisticwater.RealisticWaterMod"
     ],
