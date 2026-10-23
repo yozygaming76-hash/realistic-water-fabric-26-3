@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "realistic_water",
+  "version": "${version}",
+  "name": "Realistic Water",
+  "description": "Adds a Realistic Water Bucket with a lightweight voxel-style water spread prototype.",
+  "authors": ["You"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.example.realisticwater.RealisticWaterMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
