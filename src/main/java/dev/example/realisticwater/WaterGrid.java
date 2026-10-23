@@ -4,13 +4,12 @@ package dev.example.realisticwater;
 import java.util.Arrays;
 
 /**
- * A small, independent water simulation grid.
+ * A small water simulation grid.
  *
- * Each cell stores a water depth from 0.0 to 1.0.
- * Gravity moves water downward; pressure redistributes
- * water between neighbouring cells.
+ * Each cell stores a water amount between 0 and 1.
+ * Terrain checks can prevent water entering blocked cells.
  *
- * This class does not place or change Minecraft blocks.
+ * This class does not change Minecraft blocks or render water.
  */
 public final class WaterGrid {
 
@@ -21,13 +20,18 @@ public final class WaterGrid {
     private static final float MAX_DEPTH = 1.0F;
     private static final float GRAVITY = 0.12F;
     private static final float HORIZONTAL_FLOW = 0.20F;
-    private static final float DAMPING = 0.985F;
 
     private final float[][][] water =
         new float[WIDTH][HEIGHT][DEPTH];
 
-    private final float[][][] velocity =
-        new float[WIDTH][HEIGHT][DEPTH];
+    /**
+     * Implement this interface to tell the simulation
+     * which cells contain solid terrain.
+     */
+    @FunctionalInterface
+    public interface Terrain {
+        boolean isBlocked(int x, int y, int z);
+    }
 
     public WaterGrid() {
     }
@@ -61,10 +65,26 @@ public final class WaterGrid {
     }
 
     /**
-     * Advances the simulation by one step.
-     * Call on the server at a controlled tick interval.
+     * Compatibility method for existing code.
+     * This version has no terrain information.
      */
     public synchronized void tick() {
+        tick((x, y, z) -> false);
+    }
+
+    /**
+     * Advances the simulation while checking terrain.
+     *
+     * The terrain callback uses coordinates local to this grid.
+     * Blocked cells cannot receive water from other cells.
+     */
+    public synchronized void tick(Terrain terrain) {
+        if (terrain == null) {
+            throw new IllegalArgumentException(
+                "Terrain checker cannot be null"
+            );
+        }
+
         float[][][] next =
             new float[WIDTH][HEIGHT][DEPTH];
 
@@ -76,8 +96,6 @@ public final class WaterGrid {
             }
         }
 
-        // Process each cell once. Transfers are limited so
-        // the simulation cannot create water from nothing.
         for (int x = 0; x < WIDTH; x++) {
             for (int y = 0; y < HEIGHT; y++) {
                 for (int z = 0; z < DEPTH; z++) {
@@ -88,12 +106,19 @@ public final class WaterGrid {
                         continue;
                     }
 
-                    float remaining = amount;
+                    // Do not move water out of a blocked cell.
+                    if (terrain.isBlocked(x, y, z)) {
+                        continue;
+                    }
 
-                    // Gravity: move water into the cell below.
-                    if (y > 0) {
-                        float below = water[x][y - 1][z];
-                        float capacity = MAX_DEPTH - below;
+                    float remaining = next[x][y][z];
+
+                    // Gravity: try the cell below first.
+                    if (y > 0
+                        && !terrain.isBlocked(x, y - 1, z)) {
+
+                        float capacity =
+                            MAX_DEPTH - next[x][y - 1][z];
 
                         if (capacity > 0.0F) {
                             float transfer = Math.min(
@@ -107,8 +132,7 @@ public final class WaterGrid {
                         }
                     }
 
-                    // Pressure: spread toward lower neighbouring
-                    // cells, only moving a fraction per step.
+                    // Spread horizontally into less-full cells.
                     int[][] directions = {
                         {1, 0},
                         {-1, 0},
@@ -128,24 +152,32 @@ public final class WaterGrid {
                             continue;
                         }
 
-                        float neighbour = water[nx][y][nz];
+                        if (terrain.isBlocked(nx, y, nz)) {
+                            continue;
+                        }
+
+                        float neighbour = next[nx][y][nz];
                         float difference = amount - neighbour;
 
                         if (difference <= 0.05F) {
                             continue;
                         }
 
+                        float capacity = MAX_DEPTH - neighbour;
+
+                        if (capacity <= 0.0F) {
+                            continue;
+                        }
+
                         float transfer = Math.min(
                             remaining,
                             Math.min(
-                                difference * HORIZONTAL_FLOW,
-                                HORIZONTAL_FLOW
+                                capacity,
+                                Math.min(
+                                    difference * HORIZONTAL_FLOW,
+                                    HORIZONTAL_FLOW
+                                )
                             )
-                        );
-
-                        transfer = Math.min(
-                            transfer,
-                            MAX_DEPTH - next[nx][y][nz]
                         );
 
                         if (transfer <= 0.0F) {
@@ -167,10 +199,6 @@ public final class WaterGrid {
                         0.0F,
                         Math.min(MAX_DEPTH, next[x][y][z])
                     );
-
-                    velocity[x][y][z] =
-                        velocity[x][y][z] * DAMPING
-                        + (water[x][y][z] > 0 ? GRAVITY : 0);
                 }
             }
         }
@@ -184,12 +212,6 @@ public final class WaterGrid {
 
     public synchronized void clear() {
         for (float[][] layer : water) {
-            for (float[] row : layer) {
-                Arrays.fill(row, 0.0F);
-            }
-        }
-
-        for (float[][] layer : velocity) {
             for (float[] row : layer) {
                 Arrays.fill(row, 0.0F);
             }
