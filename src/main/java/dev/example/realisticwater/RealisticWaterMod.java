@@ -21,7 +21,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.UseOnContext;
 
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.gameevent.GameEvent;
 
 public final class RealisticWaterMod implements ModInitializer {
@@ -55,8 +54,9 @@ public final class RealisticWaterMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // The custom bucket uses Minecraft's built-in water.
-        // No extra water-spreading simulation is started.
+        System.out.println(
+            "[Realistic Water] Simulation bucket integration loaded!"
+        );
     }
 
     public static final class RealisticWaterBucketItem extends Item {
@@ -74,50 +74,67 @@ public final class RealisticWaterMod implements ModInitializer {
 
             Player player = context.getPlayer();
 
-            // Only place water where the target block is replaceable.
+            // Do not pour into a solid, non-replaceable block.
             if (!level.getBlockState(target).canBeReplaced()) {
                 return InteractionResult.FAIL;
             }
 
-            if (!level.isClientSide()) {
+            if (level.isClientSide()) {
+                return InteractionResult.SUCCESS;
+            }
 
-                // Place one ordinary Minecraft water source.
-                boolean placed = level.setBlock(
-                    target,
-                    Blocks.WATER.defaultBlockState(),
-                    3
-                );
+            // Divide the world into independent 16 x 8 x 16
+            // simulation regions.
+            int regionX = Math.floorDiv(target.getX(), WaterGrid.WIDTH);
+            int regionY = Math.floorDiv(target.getY(), WaterGrid.HEIGHT);
+            int regionZ = Math.floorDiv(target.getZ(), WaterGrid.DEPTH);
 
-                if (!placed) {
-                    return InteractionResult.FAIL;
-                }
+            String gridKey =
+                level.dimension().toString()
+                + ":" + regionX
+                + ":" + regionY
+                + ":" + regionZ;
 
-                level.gameEvent(
-                    player,
-                    GameEvent.FLUID_PLACE,
-                    target
-                );
+            WaterGrid grid = WaterSimulation.getGrid(gridKey);
 
-                level.playSound(
-                    null,
-                    target,
-                    SoundEvents.BUCKET_EMPTY,
-                    SoundSource.BLOCKS,
-                    1.0F,
-                    1.0F
-                );
+            // Convert world coordinates into coordinates inside
+            // this region.
+            int localX = Math.floorMod(target.getX(), WaterGrid.WIDTH);
+            int localY = Math.floorMod(target.getY(), WaterGrid.HEIGHT);
+            int localZ = Math.floorMod(target.getZ(), WaterGrid.DEPTH);
 
-                // Return an empty bucket in Survival.
-                if (player == null || !player.getAbilities().instabuild) {
-                    ItemStack heldStack = context.getItemInHand();
+            // Refuse to pour into a full simulation cell.
+            if (grid.getWater(localX, localY, localZ) >= 0.99F) {
+                return InteractionResult.FAIL;
+            }
 
-                    heldStack.shrink(1);
+            // Add simulated water instead of placing vanilla water.
+            grid.addWater(localX, localY, localZ, 1.0F);
 
-                    if (player != null) {
-                        player.getInventory().add(
-                            new ItemStack(Items.BUCKET)
-                        );
-                    }
+            level.gameEvent(
+                player,
+                GameEvent.FLUID_PLACE,
+                target
+            );
+
+            level.playSound(
+                null,
+                target,
+                SoundEvents.BUCKET_EMPTY,
+                SoundSource.BLOCKS,
+                1.0F,
+                1.0F
+            );
+
+            // Give an empty bucket back in Survival.
+            if (player == null || !player.getAbilities().instabuild) {
+                ItemStack heldStack = context.getItemInHand();
+                heldStack.shrink(1);
+
+                if (player != null) {
+                    player.getInventory().add(
+                        new ItemStack(Items.BUCKET)
+                    );
                 }
             }
 
