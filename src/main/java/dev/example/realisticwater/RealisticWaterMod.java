@@ -2,6 +2,7 @@
 package dev.example.realisticwater;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
@@ -57,6 +58,11 @@ public final class RealisticWaterMod implements ModInitializer {
         System.out.println(
             "[Realistic Water] Simulation bucket integration loaded!"
         );
+
+        // Advance simulated water at the end of each server world tick.
+        ServerTickEvents.END_WORLD_TICK.register(
+            WaterSimulation::tickWorld
+        );
     }
 
     public static final class RealisticWaterBucketItem extends Item {
@@ -74,17 +80,17 @@ public final class RealisticWaterMod implements ModInitializer {
 
             Player player = context.getPlayer();
 
-            // Do not pour into a solid, non-replaceable block.
+            // Only pour into a replaceable block position.
             if (!level.getBlockState(target).canBeReplaced()) {
                 return InteractionResult.FAIL;
             }
 
+            // The server performs the actual simulation update.
             if (level.isClientSide()) {
                 return InteractionResult.SUCCESS;
             }
 
-            // Divide the world into independent 16 x 8 x 16
-            // simulation regions.
+            // Find the simulation region containing this position.
             int regionX = Math.floorDiv(target.getX(), WaterGrid.WIDTH);
             int regionY = Math.floorDiv(target.getY(), WaterGrid.HEIGHT);
             int regionZ = Math.floorDiv(target.getZ(), WaterGrid.DEPTH);
@@ -97,18 +103,17 @@ public final class RealisticWaterMod implements ModInitializer {
 
             WaterGrid grid = WaterSimulation.getGrid(gridKey);
 
-            // Convert world coordinates into coordinates inside
-            // this region.
+            // Convert world coordinates to local grid coordinates.
             int localX = Math.floorMod(target.getX(), WaterGrid.WIDTH);
             int localY = Math.floorMod(target.getY(), WaterGrid.HEIGHT);
             int localZ = Math.floorMod(target.getZ(), WaterGrid.DEPTH);
 
-            // Refuse to pour into a full simulation cell.
+            // Do not allow pouring into an already-full cell.
             if (grid.getWater(localX, localY, localZ) >= 0.99F) {
                 return InteractionResult.FAIL;
             }
 
-            // Add simulated water instead of placing vanilla water.
+            // Add simulated water without placing a vanilla water block.
             grid.addWater(localX, localY, localZ, 1.0F);
 
             level.gameEvent(
@@ -126,7 +131,7 @@ public final class RealisticWaterMod implements ModInitializer {
                 1.0F
             );
 
-            // Give an empty bucket back in Survival.
+            // Return a normal empty bucket in Survival.
             if (player == null || !player.getAbilities().instabuild) {
                 ItemStack heldStack = context.getItemInHand();
                 heldStack.shrink(1);
