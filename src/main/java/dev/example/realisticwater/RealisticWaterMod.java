@@ -1,33 +1,36 @@
+
 package dev.example.realisticwater;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.level.gameevent.GameEvent;
+
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.core.BlockPos;
+
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.item.context.UseOnContext;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.material.FlowingFluid;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.UseOnContext;
+
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.gameevent.GameEvent;
 
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
 public final class RealisticWaterMod implements ModInitializer {
+
     public static final String MOD_ID = "realistic_water";
 
     public static final Item REALISTIC_WATER_BUCKET = registerItem(
@@ -36,7 +39,10 @@ public final class RealisticWaterMod implements ModInitializer {
             new Item.Properties()
                 .setId(ResourceKey.create(
                     Registries.ITEM,
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "realistic_water_bucket")
+                    Identifier.fromNamespaceAndPath(
+                        MOD_ID,
+                        "realistic_water_bucket"
+                    )
                 ))
                 .stacksTo(1)
         )
@@ -45,7 +51,7 @@ public final class RealisticWaterMod implements ModInitializer {
     private static Item registerItem(String name, Item item) {
         return Registry.register(
             BuiltInRegistries.ITEM,
-            ResourceLocation.fromNamespaceAndPath(MOD_ID, name),
+            Identifier.fromNamespaceAndPath(MOD_ID, name),
             item
         );
     }
@@ -56,6 +62,7 @@ public final class RealisticWaterMod implements ModInitializer {
     }
 
     public static final class RealisticWaterBucketItem extends Item {
+
         public RealisticWaterBucketItem(Properties properties) {
             super(properties);
         }
@@ -63,7 +70,10 @@ public final class RealisticWaterMod implements ModInitializer {
         @Override
         public InteractionResult useOn(UseOnContext context) {
             Level level = context.getLevel();
-            BlockPos target = context.getClickedPos().relative(context.getClickedFace());
+
+            BlockPos target = context.getClickedPos()
+                .relative(context.getClickedFace());
+
             Player player = context.getPlayer();
 
             if (!level.getBlockState(target).canBeReplaced()) {
@@ -71,46 +81,80 @@ public final class RealisticWaterMod implements ModInitializer {
             }
 
             if (!level.isClientSide()) {
-                level.setBlock(target, Blocks.WATER.defaultBlockState(), 3);
-                level.gameEvent(player, GameEvent.FLUID_PLACE, target);
-                level.playSound(null, target, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                boolean placed = level.setBlock(
+                    target,
+                    Blocks.WATER.defaultBlockState(),
+                    3
+                );
+
+                if (!placed) {
+                    return InteractionResult.FAIL;
+                }
+
+                level.gameEvent(
+                    player,
+                    GameEvent.FLUID_PLACE,
+                    target
+                );
+
+                level.playSound(
+                    null,
+                    target,
+                    SoundEvents.BUCKET_EMPTY,
+                    SoundSource.BLOCKS,
+                    1.0F,
+                    1.0F
+                );
+
                 WaterSimulation.addSource(level, target);
 
                 if (player == null || !player.getAbilities().instabuild) {
-                    ItemStack stack = context.getItemInHand();
-                    stack.shrink(1);
+                    ItemStack heldStack = context.getItemInHand();
+
+                    heldStack.shrink(1);
+
                     if (player != null) {
-                        player.getInventory().add(new ItemStack(net.minecraft.world.item.Items.BUCKET));
+                        player.getInventory().add(
+                            new ItemStack(Items.BUCKET)
+                        );
                     }
                 }
             }
+
             return InteractionResult.SUCCESS;
         }
     }
 
     /**
-     * Lightweight prototype simulation:
-     * tracks only water placed by this bucket and nudges it down/outward in
-     * small steps. The visible fluid is still vanilla water for compatibility.
+     * Prototype simulation for water placed by the custom bucket.
      *
-     * Note: vanilla water's own fluid engine also runs. This is an intentionally
-     * conservative first version rather than a replacement Fluid implementation.
+     * This tracks the source placed by this item and its descendants.
+     * Vanilla water physics still runs alongside this prototype.
      */
     public static final class WaterSimulation {
-        private static final Set<TrackedWater> TRACKED = new HashSet<>();
-        private static int tickCounter = 0;
 
-        private record TrackedWater(Level level, BlockPos pos, int age) {}
+        private static final Set<TrackedWater> TRACKED = new HashSet<>();
+
+        private record TrackedWater(
+            Level level,
+            BlockPos pos,
+            int age
+        ) {}
 
         private static void initialize() {
-            ServerTickEvents.END_WORLD_TICK.register(level -> {
-                if (++tickCounter % 3 != 0 || TRACKED.isEmpty()) return;
+            ServerTickEvents.END_LEVEL_TICK.register(level -> {
+                if (TRACKED.isEmpty()) {
+                    return;
+                }
+
                 tick(level);
             });
         }
 
         private static void addSource(Level level, BlockPos pos) {
-            TRACKED.add(new TrackedWater(level, pos.immutable(), 0));
+            TRACKED.add(
+                new TrackedWater(level, pos.immutable(), 0)
+            );
         }
 
         private static void tick(Level currentLevel) {
@@ -119,38 +163,83 @@ public final class RealisticWaterMod implements ModInitializer {
 
             while (iterator.hasNext()) {
                 TrackedWater tracked = iterator.next();
-                if (tracked.level() != currentLevel) continue;
+
+                if (tracked.level() != currentLevel) {
+                    continue;
+                }
 
                 BlockPos pos = tracked.pos();
-                if (!currentLevel.isLoaded(pos) ||
-                    !currentLevel.getBlockState(pos).is(Blocks.WATER) ||
-                    tracked.age() > 90) {
+
+                if (!currentLevel.isLoaded(pos)
+                    || !currentLevel.getBlockState(pos).is(Blocks.WATER)
+                    || tracked.age() >= 90) {
+
                     iterator.remove();
                     continue;
                 }
 
-                // Prefer downward flow, which gives the simulation a gravity bias.
+                // Prefer downward movement.
                 BlockPos below = pos.below();
+
                 if (currentLevel.getBlockState(below).isAir()) {
-                    currentLevel.setBlock(below, Blocks.WATER.defaultBlockState(), 3);
-                    additions.add(new TrackedWater(currentLevel, below.immutable(), tracked.age() + 1));
+                    boolean placed = currentLevel.setBlock(
+                        below,
+                        Blocks.WATER.defaultBlockState(),
+                        3
+                    );
+
+                    if (placed) {
+                        additions.add(
+                            new TrackedWater(
+                                currentLevel,
+                                below.immutable(),
+                                tracked.age() + 1
+                            )
+                        );
+                    }
+
                     iterator.remove();
                     continue;
                 }
 
-                // Spread into up to two neighboring cells per simulation step.
+                // Spread to at most two neighboring air blocks.
                 BlockPos[] neighbors = {
-                    pos.north(), pos.south(), pos.east(), pos.west()
+                    pos.north(),
+                    pos.south(),
+                    pos.east(),
+                    pos.west()
                 };
+
                 int spread = 0;
+
                 for (BlockPos neighbor : neighbors) {
-                    if (spread >= 2) break;
-                    if (currentLevel.getBlockState(neighbor).isAir()) {
-                        currentLevel.setBlock(neighbor, Blocks.WATER.defaultBlockState(), 3);
-                        additions.add(new TrackedWater(currentLevel, neighbor.immutable(), tracked.age() + 1));
+                    if (spread >= 2) {
+                        break;
+                    }
+
+                    if (!currentLevel.getBlockState(neighbor).isAir()) {
+                        continue;
+                    }
+
+                    boolean placed = currentLevel.setBlock(
+                        neighbor,
+                        Blocks.WATER.defaultBlockState(),
+                        3
+                    );
+
+                    if (placed) {
+                        additions.add(
+                            new TrackedWater(
+                                currentLevel,
+                                neighbor.immutable(),
+                                tracked.age() + 1
+                            )
+                        );
+
                         spread++;
                     }
                 }
+
                 iterator.remove();
             }
 
