@@ -1,8 +1,8 @@
 
 package dev.example.realisticwater;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -29,13 +29,51 @@ public final class WaterSimulation {
     }
 
     /**
-     * Advances the grids belonging to this Minecraft dimension.
-     * Call from the server's world-tick event.
+     * Returns the grid entries for later rendering integration.
+     */
+    public static synchronized Map<String, WaterGrid> getGridsSnapshot() {
+        return new HashMap<>(GRIDS);
+    }
+
+    /**
+     * Calculates the world-space origin of a grid from its key.
+     */
+    public static BlockPos getGridOrigin(String key) {
+        int last = key.lastIndexOf(':');
+        int second = last < 0 ? -1 : key.lastIndexOf(':', last - 1);
+        int third = second < 0 ? -1 : key.lastIndexOf(':', second - 1);
+
+        if (third < 0 || second < 0 || last < 0) {
+            return BlockPos.ZERO;
+        }
+
+        try {
+            int regionX = Integer.parseInt(
+                key.substring(third + 1, second)
+            );
+            int regionY = Integer.parseInt(
+                key.substring(second + 1, last)
+            );
+            int regionZ = Integer.parseInt(
+                key.substring(last + 1)
+            );
+
+            return new BlockPos(
+                regionX * WaterGrid.WIDTH,
+                regionY * WaterGrid.HEIGHT,
+                regionZ * WaterGrid.DEPTH
+            );
+        } catch (NumberFormatException exception) {
+            return BlockPos.ZERO;
+        }
+    }
+
+    /**
+     * Advances grids belonging to this dimension.
      */
     public static synchronized void tickWorld(ServerLevel world) {
         tickCounter++;
 
-        // Simulate every third world tick to reduce server load.
         if (tickCounter % 3 != 0) {
             return;
         }
@@ -49,59 +87,20 @@ public final class WaterSimulation {
                 continue;
             }
 
-            int[] region = parseRegion(key);
-
-            if (region == null) {
-                continue;
-            }
-
-            int baseX = region[0] * WaterGrid.WIDTH;
-            int baseY = region[1] * WaterGrid.HEIGHT;
-            int baseZ = region[2] * WaterGrid.DEPTH;
-
+            BlockPos origin = getGridOrigin(key);
             WaterGrid grid = entry.getValue();
 
             grid.tick((x, y, z) -> {
-                BlockPos pos = new BlockPos(
-                    baseX + x,
-                    baseY + y,
-                    baseZ + z
-                );
+                BlockPos pos = origin.offset(x, y, z);
 
-                // Never load an unloaded chunk just for simulation.
                 if (!world.hasChunkAt(pos)) {
                     return true;
                 }
 
-                // Blocks with collision shapes stop the simulated water.
                 return !world.getBlockState(pos)
                     .getCollisionShape(world, pos)
                     .isEmpty();
             });
-        }
-    }
-
-    /**
-     * Reads the last three colon-separated values from the grid key.
-     * This allows the dimension identifier to contain colons too.
-     */
-    private static int[] parseRegion(String key) {
-        try {
-            int last = key.lastIndexOf(':');
-            int second = key.lastIndexOf(':', last - 1);
-            int third = key.lastIndexOf(':', second - 1);
-
-            if (third < 0 || second < 0 || last < 0) {
-                return null;
-            }
-
-            return new int[] {
-                Integer.parseInt(key.substring(third + 1, second)),
-                Integer.parseInt(key.substring(second + 1, last)),
-                Integer.parseInt(key.substring(last + 1))
-            };
-        } catch (RuntimeException exception) {
-            return null;
         }
     }
 
