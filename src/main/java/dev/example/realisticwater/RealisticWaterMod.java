@@ -60,9 +60,9 @@ public final class RealisticWaterMod implements ModInitializer {
         );
 
         // Advance simulated water at the end of each server world tick.
-        ServerTickEvents.END_WORLD_TICK.register(
-            WaterSimulation::tickWorld
-        );
+      ServerTickEvents.END_LEVEL_TICK.register(
+    WaterSimulation::tickWorld
+);
     }
 
     public static final class RealisticWaterBucketItem extends Item {
