@@ -36,4 +36,8 @@ public final class RealisticWaterClient implements ClientModInitializer {
         float b,
         float a
     ) {}
+public static void close() {
+    // Rendering resources will be released here
+    // when we add the water renderer.
+}
 }
