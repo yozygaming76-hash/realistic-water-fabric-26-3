@@ -12,5 +12,3 @@ public final class RealisticWaterClient implements ClientModInitializer {
         );
     }
 }
-
-}
