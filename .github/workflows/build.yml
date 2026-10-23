@@ -1,0 +1,35 @@
+
+name: Build Realistic Water mod
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download project
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Build mod
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+
+      - name: Upload JAR files
+        uses: actions/upload-artifact@v4
+        with:
+          name: realistic-water-mod-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
